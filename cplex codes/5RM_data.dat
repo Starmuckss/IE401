@@ -1,0 +1,33 @@
+/*********************************************
+ * OPL 20.1.0.0 Data
+ * Author: HP
+ * Creation Date: Apr 7, 2022 at 12:52:33 PM
+ *********************************************/
+RawMaterialsNumber = 5; 
+timeLimit = 330; // Day
+//Büyük ihtimalle Stockout constraint'de bir problem var, beraber bakmamýz gerekli'
+SheetConnection excelSheet("weekly_safety_stocks_1.96.xlsx");
+
+LeadTime from SheetRead(excelSheet,"lead_times!C2:C6") ;
+
+startingInv from SheetRead(excelSheet,"starting_inventory!C2:C6")  ; //avg. demand * leadtime * 2
+
+CL from SheetRead(excelSheet,"holding_and_stockout_costs!C2:C6"); //Assumption
+//CS from SheetRead(excelSheet,"holding_and_stockout_costs!D2:D6"); //assumption
+CS = [1000,1000,1000,1000,1000];
+SafetyStock from SheetRead(excelSheet,"weekly_safety_stock!B3:LS7");
+Demand from SheetRead(excelSheet,"Daily_Demand!B2:LS6");
+// RM 001,002,003,005,006 
+MBS from SheetRead(excelSheet,"lead_times!E2:E6");
+M = 500000;
+//ReorderPoint from SheetRead(excelSheet,"Reorder_Points!B3:LS7");
+
+
+
+// Export Results
+//SheetConnection resultSheet("results_1.96.xlsx");
+//y to SheetWrite(resultSheet,"PurchaseBool!A1:LR5");
+//P to SheetWrite(resultSheet,"PurchaseAmount!A1:LR5");
+//E to SheetWrite(resultSheet,"Inventory!A1:LR5");
+//B to SheetWrite(resultSheet,"stockout!A1:LR5");
+
