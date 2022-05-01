@@ -60,7 +60,7 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     # Lead Times
     lt_data = lead_time_data[lead_time_data['MATERIAL NUMBER'].isin(RM_list)] # Lead times for 118 Raw Materials
     
-    # Starting inventory: avg. demand * leadtime * 2 ####!!! RM 160 sıkıntılı
+    # Starting inventory: avg. demand * leadtime * 2
     starting_inventory_list = list()
     
     for rm_id in list(RM_list):
@@ -75,7 +75,7 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
 
     #Costs: Stockout cost, inventory holding costs
     holding_cost =[5 for x in RM_list] # 5 for all of them (Assumption)
-    stockout_cost =[1000 for x in RM_list] # 10 for all of them (Assumption)      
+    stockout_cost =[1000 for x in RM_list] # 1000 for all of them (Assumption)      
     cost_data_dataframe = pd.DataFrame(data = {'MATERIAL NUMBER': RM_list,'Holding Costs': holding_cost,'Stockout Costs':stockout_cost})
     
     #daily Demand 
@@ -119,9 +119,6 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
         merged_weeks_and_days_rop.to_excel(writer,sheet_name = "Reorder_Points")        
         daily_demand.to_excel(writer,sheet_name = "Daily_Demand") 
 #grouped_by_week_safety_stock.to_excel('weekly_safety_stocks.xlsx')
-# new = pd.merge(clean_df,grouped_by_week_safety_stock.reset_index(),on='week',how='outer') gibi bir şeyle daily demand we safety_stock
 
-#%%
-# Safety Stock = Avg. Weekly Standard dev * Lead Time * z score
  
 

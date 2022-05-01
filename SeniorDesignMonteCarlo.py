@@ -6,13 +6,16 @@ Created on Fri Apr  8 12:49:24 2022
 """
 import pandas as pd
 import matplotlib.pyplot as plt
-import scipy.stats as st
-import math
-import numpy as np
 from datetime import datetime, timedelta
 import random
-
+import warnings;   warnings.filterwarnings("ignore")
 #%% DATA PREPARATION
+
+#root_directory = "C:\\Users\\HP\\Desktop\\11" # root directory contains everything
+#dates = os.listdir(root_directory) # Assumed date files are directly under root directory
+#dir_path = os.path.dirname(os.path.realpath(__file__))
+
+
 raw_materials_in_analysis = ['RM0001','RM0002','RM0003','RM0005','RM0006'] # to use all raw materials use raw_materials_in_analysis = list(weekly_startdard_deviation["Unnamed: 0"])
 
 E_inventory = pd.read_excel(io="Results_1.96.xlsx",sheet_name="Inventory") # Starting inventories for each RM
@@ -22,6 +25,9 @@ purchase_decision = pd.read_excel(io="Results_1.96.xlsx",sheet_name="PurchaseBoo
 purchase_amount = pd.read_excel(io="Results_1.96.xlsx",sheet_name="PurchaseAmount",header=None) # Buy x amount
 daily_demand = pd.read_excel(io="weekly_safety_stocks_1.96.xlsx",sheet_name="Daily_Demand") # Usage of each RM i in day j
 lead_time_data = pd.read_excel("weekly_safety_stocks_1.96.xlsx",sheet_name = "lead_times") # Lead Times for each RM
+#starting_inventory_data = pd.read_excel(io="data\\MaterialType.xlsx",sheet_name="starting_inventory") # Starting inventories for each RM
+
+
 
 purchase_decision.index = raw_materials_in_analysis
 purchase_amount.index = raw_materials_in_analysis
@@ -41,26 +47,19 @@ weekly_standard_deviation_used.set_index("MATERIAL NUMBER",inplace=True)
 weekly_standard_deviation_used_transposed = weekly_standard_deviation_used.transpose()
 
 # ignored_days: 0 usage for all RM's. Holidays (Eid al-Fitr,Eid al-Adha,New Year's Day) (Ramazan,Kurban,Yılbaşı)
-ignored_days = ['2022-05-01 00:00:00','2022-05-02 00:00:00','2022-05-03 00:00:00','2022-05-04 00:00:00','2022-07-09 00:00:00'
-                ,'2022-07-10 00:00:00','2022-07-11 00:00:00','2022-07-12 00:00:00','2023-01-01 00:00:00']
-ignore_timestamps = [datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in ignored_days]
+#ignored_days = ['2022-05-01 00:00:00','2022-05-02 00:00:00','2022-05-03 00:00:00','2022-05-04 00:00:00','2022-07-09 00:00:00'
+#                ,'2022-07-10 00:00:00','2022-07-11 00:00:00','2022-07-12 00:00:00','2023-01-01 00:00:00']
+#ignore_timestamps = [datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in ignored_days]
 
 # Costs
 holding_cost = 5
 stockout_cost = 1000
 
 #%% Simulation
-def simulation(rm_id,demand_forecast_coefficient=1,lead_time_deviation=1,plot = False,start_date = datetime.strptime("2022-03-14 00:00:00", "%Y-%m-%d %H:%M:%S")):
+def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime("2022-03-14 00:00:00", "%Y-%m-%d %H:%M:%S")):
     """
     raw_material_id : String, name of the column
-    
-    demand_forecast_coefficient : float, added to the simulation to 
-    see different behaviors when demand is between 80%-120% of forecast
-    default:1
-    
-    lead_time_deviation: int, deviate the lead_time to see different behaviours
-    default: 1
-    """
+        """
     
     lead_time = lead_time_data.loc[lead_time_data['MATERIAL NUMBER'] == rm_id, 'TRANSIT TIME'].iloc[0] 
     starting_inventory = starting_inventory_data.loc[starting_inventory_data['MATERIAL NUMBER'] == rm_id, 'Starting Inventory'].iloc[0]
@@ -77,7 +76,7 @@ def simulation(rm_id,demand_forecast_coefficient=1,lead_time_deviation=1,plot = 
     # Manipulate demand
     demand_df = pd.DataFrame(usage) 
     random.seed(42)
-    random_numbers = [(x,random.uniform(-1.5,1.5)) for x in range(1,53)]
+    random_numbers = [(x,random.uniform(x1,x2)) for x in range(1,53)]
     df_random = pd.DataFrame(random_numbers)
     df_random.columns = ["week","random_number"]
     
@@ -103,7 +102,7 @@ def simulation(rm_id,demand_forecast_coefficient=1,lead_time_deviation=1,plot = 
     total_cost_incurred = 0
     #day 0 day 1 day 2
     #simulation
-    # Solve the issue for current_stock = current_stock - usage_day_index.loc[day-1] # IMPORTANT  
+    # Solve the issue for current_stock = current_stock - usage_day_index.loc[day-1] 
     
     for day in range(1,len(order_amount)):
         
@@ -115,9 +114,8 @@ def simulation(rm_id,demand_forecast_coefficient=1,lead_time_deviation=1,plot = 
          
         total_cost_incurred += max(current_stock,0) * holding_cost 
         if current_stock < 0: # when Inventory is negative, stockout occurs
-            stockout_days += 1 # Ne kadar stockout olduk?
+            stockout_days += 1 
             total_cost_incurred += stockout_cost 
-            # bu günleri kaydet 
         daily_inventory.append(current_stock) # Add current inventory to daily_inventory list to graph it later        
     
     
@@ -125,14 +123,17 @@ def simulation(rm_id,demand_forecast_coefficient=1,lead_time_deviation=1,plot = 
         fig, ax = plt.subplots() 
         ax.plot(usage.index[:-1], daily_inventory, color="C0")
         #ax.plot(example_rm,reorder_point)
-        plt.title(rm_id)    
+        plt.title(rm_id) 
+        plt.ylabel("Inventory")
+        plt.xlabel("Date")
+        plt.savefig(rm_id+".png",dpi=200)
         
+    print("Results for",rm_id+":","Total stockouts:", stockout_days,"Cost:", str(total_cost_incurred) )
+    return total_cost_incurred
     
-    print("Results:","Total stockouts:", stockout_days,rm_id, total_cost_incurred )
-     # Get the demand of a raw material
-    
-#simulation('RM0001',plot = True)
-simulation('RM0002',plot = True)
+total_cost = 0
+for rm in raw_materials_in_analysis:
+    cost = simulation(rm,plot = True,x1 = -1,x2 = 1)
+    total_cost += cost
 
-
-    
+print("Total Cost under uncertainty is: " + str(total_cost))
