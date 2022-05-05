@@ -38,7 +38,7 @@ clean_df['year'] = clean_df.index.year # Get year of days in data
 
 grouped_by_week_averages = clean_df.groupby(['week','year']).mean() #Weekly averages 
 grouped_by_week_std = clean_df.groupby(['week','year']).std() #Weekly standart deviations
-
+grouped_by_week_sum = clean_df.groupby(['week','year']).sum()
 for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     grouped_by_week_safety_stock = pd.DataFrame()
     
@@ -55,9 +55,9 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
             grouped_by_week_safety_stock = pd.DataFrame(grouped_by_week_safety_stock)
     
     # Purchase Cost (Dollars per kg)
-    purchase_cost = pd.DataFrame(data = {"Category": ["Rubber","Metallic reinforc.","Carbon Black","Chemical","Bead","Synthetic Rubber","Textile reinforc."],
+    purchase_cost = pd.DataFrame(data = {"Category": ["Natural Rubber","Metallic reinforc.","Carbon Black","Chemical","Bead","Synthetic Rubber","Textile reinforc."],
                                          "Purchase Cost": [2,1,3,5,2,1.77,1.18] })
-    purchase_cost["Holding Cost"] = 0.10 * purchase_cost["Purchase Cost"] # 10% interest for a dollar annually	 
+    purchase_cost["Holding Cost"] = 0.10 * (1/365) * purchase_cost["Purchase Cost"] # 10% interest for a dollar annually	 
     purchase_and_holding_costs = pd.merge(material_type_data,purchase_cost,on='Category',how='inner')
     
      # Lead Times
@@ -74,7 +74,8 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     transposed = grouped_by_week_safety_stock.reset_index()
     transposed = transposed.transpose()
     
-   
+    # Weekly Usage Data (FOR DATA ANALYSIS)
+    grouped_by_week_sum = grouped_by_week_sum.sort_values(['year','week'],ascending=[True,True])
     
     # Starting inventory: avg. demand * leadtime * 2
     starting_inventory_list = list()
@@ -122,14 +123,20 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     weekly_startdard_deviation.columns = [x.split("_")[0] for x in weekly_startdard_deviation.columns]
     transposed_weekly_startdard_deviation = weekly_startdard_deviation.transpose(   ) # Transpose to match cplex format
     
+    
+    
+    
+    
     with pd.ExcelWriter("Output Data\\weekly_safety_stocks_"+ str(z_score) + ".xlsx") as writer:
         transposed_weekly_safety_stock_data.to_excel(writer,sheet_name='weekly_safety_stock')
         transposed_weekly_startdard_deviation.to_excel(writer,sheet_name='weekly_startdard_deviation')
         order_data.to_excel(writer,sheet_name='order_data')
         starting_inventory_df.to_excel(writer,sheet_name = 'starting_inventory')
-        purchase_and_holding_costs.to_excel(writer,sheet_name = "holding_and_stockout_costs")
+        purchase_and_holding_costs.to_excel(writer,sheet_name = "purchase_and_holding_costs")
         merged_weeks_and_days_rop.to_excel(writer,sheet_name = "Reorder_Points")        
         daily_demand.to_excel(writer,sheet_name = "Daily_Demand") 
+        grouped_by_week_sum.to_excel(writer,sheet_name= "Weekly_Demand")
+    
 #grouped_by_week_safety_stock.to_excel('weekly_safety_stocks.xlsx')
 
  
