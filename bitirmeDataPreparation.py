@@ -11,8 +11,11 @@ import math
 import time
 import datetime as dt
 
-usage_data = pd.read_excel("Safety Stock Çalışma.xlsx",sheet_name="USAGE")
-lead_time_data = pd.read_excel("Safety Stock Çalışma.xlsx",sheet_name="DATA")
+usage_data = pd.read_excel("input data\\Safety Stock Çalışma.xlsx",sheet_name="USAGE")
+lead_time_data = pd.read_excel("input data\\Safety Stock Çalışma.xlsx",sheet_name="DATA")
+ordering_cost_data = pd.read_excel("input data\\Ordering Cost.xlsx")
+material_type_data = pd.read_csv("input data\\MaterialType.csv",sep=";")
+material_type_data = material_type_data[["MALZEME","Category"]]
 
 usage_data # Rows: Material Columns: Time
 
@@ -51,14 +54,27 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
             grouped_by_week_safety_stock = safety_stock_data    
             grouped_by_week_safety_stock = pd.DataFrame(grouped_by_week_safety_stock)
     
+    # Purchase Cost (Dollars per kg)
+    purchase_cost = pd.DataFrame(data = {"Category": ["Rubber","Metallic reinforc.","Carbon Black","Chemical","Bead","Synthetic Rubber","Textile reinforc."],
+                                         "Purchase Cost": [2,1,3,5,2,1.77,1.18] })
+    purchase_cost["Holding Cost"] = 0.10 * purchase_cost["Purchase Cost"] # 10% interest for a dollar annually	 
+    purchase_and_holding_costs = pd.merge(material_type_data,purchase_cost,on='Category',how='inner')
+    
+     # Lead Times
+    lt_data = lead_time_data[lead_time_data['MATERIAL NUMBER'].isin(RM_list)] # Lead times for 118 Raw Materials
+    
+    # Ordering Cost
+    order_data = pd.merge(lt_data,ordering_cost_data,on='COUNTRY',how='inner')
+    
+    
+    
     # Prepare data to be used in Cplex, make rows contain RM data again
     grouped_by_week_safety_stock.reset_index()
     grouped_by_week_safety_stock = grouped_by_week_safety_stock.sort_values(['year','week'],ascending=[True,True])
     transposed = grouped_by_week_safety_stock.reset_index()
     transposed = transposed.transpose()
     
-    # Lead Times
-    lt_data = lead_time_data[lead_time_data['MATERIAL NUMBER'].isin(RM_list)] # Lead times for 118 Raw Materials
+   
     
     # Starting inventory: avg. demand * leadtime * 2
     starting_inventory_list = list()
@@ -73,10 +89,6 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
         
     starting_inventory_df = pd.DataFrame(data = {'MATERIAL NUMBER': RM_list,'Starting Inventory': starting_inventory_list})     
 
-    #Costs: Stockout cost, inventory holding costs
-    holding_cost =[5 for x in RM_list] # 5 for all of them (Assumption)
-    stockout_cost =[1000 for x in RM_list] # 1000 for all of them (Assumption)      
-    cost_data_dataframe = pd.DataFrame(data = {'MATERIAL NUMBER': RM_list,'Holding Costs': holding_cost,'Stockout Costs':stockout_cost})
     
     #daily Demand 
     daily_demand = clean_df.transpose()
@@ -108,14 +120,14 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     weekly_startdard_deviation = pd.merge(clean_df,grouped_by_week_std.reset_index(),on='week',how='left')
     weekly_startdard_deviation = weekly_startdard_deviation[[x for x in new.columns if '_y' in x]]
     weekly_startdard_deviation.columns = [x.split("_")[0] for x in weekly_startdard_deviation.columns]
-    transposed_weekly_startdard_deviation = weekly_startdard_deviation.transpose() # Transpose to match cplex format
+    transposed_weekly_startdard_deviation = weekly_startdard_deviation.transpose(   ) # Transpose to match cplex format
     
-    with pd.ExcelWriter("weekly_safety_stocks_"+ str(z_score) + ".xlsx") as writer:
+    with pd.ExcelWriter("Output Data\\weekly_safety_stocks_"+ str(z_score) + ".xlsx") as writer:
         transposed_weekly_safety_stock_data.to_excel(writer,sheet_name='weekly_safety_stock')
         transposed_weekly_startdard_deviation.to_excel(writer,sheet_name='weekly_startdard_deviation')
-        lt_data.to_excel(writer,sheet_name='lead_times')
+        order_data.to_excel(writer,sheet_name='order_data')
         starting_inventory_df.to_excel(writer,sheet_name = 'starting_inventory')
-        cost_data_dataframe.to_excel(writer,sheet_name = "holding_and_stockout_costs")
+        purchase_and_holding_costs.to_excel(writer,sheet_name = "holding_and_stockout_costs")
         merged_weeks_and_days_rop.to_excel(writer,sheet_name = "Reorder_Points")        
         daily_demand.to_excel(writer,sheet_name = "Daily_Demand") 
 #grouped_by_week_safety_stock.to_excel('weekly_safety_stocks.xlsx')
