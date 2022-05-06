@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Apr  8 12:49:24 2022
+Created on Fri May  6 20:25:18 2022
 
 @author: HP
 """
@@ -10,22 +10,18 @@ from datetime import datetime, timedelta
 import random
 import math
 import warnings;   warnings.filterwarnings("ignore")
-
+import os
 #%% TODO
-# Add Exchange Rate +
-# Add Purchase Cost +
-# Add ordering cost + 
-# Add Lead time deviation +
+# Add Exchange Rate + +
+# Add Purchase Cost + +
+# Add ordering cost + + 
+# Add Lead time deviation + + 
 # Add distribution
-# Calculate q
-# REORDER POINTIN ICINDE SAFETY STOCK KOY!!!!!!!! + 
-# Min batchsizedan data fazla söylememiz gerekiyor galiba, örnek olarak RM0093 e bak
-# Total cost u tek göstermek yerine, holding cost order cost gibi ayrı ayrı gösterelim
+# Calculate q ?
+# Total cost u tek göstermek yerine, holding cost order cost gibi ayrı ayrı gösterelim +
 #%% DATA PREPARATION
 
-#root_directory = "C:\\Users\\HP\\Desktop\\11" # root directory contains everything
-#dates = os.listdir(root_directory) # Assumed date files are directly under root directory
-#dir_path = os.path.dirname(os.path.realpath(__file__))
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 
 raw_materials_in_analysis = ['RM0001','RM0002','RM0003','RM0005','RM0006'] # to use all raw materials use )
@@ -36,6 +32,8 @@ order_data = pd.read_excel("Output Data\\weekly_safety_stocks_1.96.xlsx",sheet_n
 #starting_inventory_data = pd.read_excel(io="data\\MaterialType.xlsx",sheet_name="starting_inventory") # Starting inventories for each RM
 reorder_point_data = pd.read_excel("Output Data\\weekly_safety_stocks_1.96.xlsx",sheet_name = "Reorder_Points")
 purchase_and_holding_cost_data = pd.read_excel("Output Data\\weekly_safety_stocks_1.96.xlsx",sheet_name = "purchase_and_holding_costs")
+max_stocks = pd.read_excel("Output Data\\weekly_safety_stocks_1.96.xlsx",sheet_name = "max_stocks")
+
 
 raw_materials_in_analysis = list(order_data["MATERIAL NUMBER"])
 
@@ -67,7 +65,7 @@ weekly_standard_deviation_used_transposed = weekly_standard_deviation_used.trans
 #ignore_timestamps = [datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in ignored_days]
 
 #Exchange rate y= 0.01x + 15, y = 15, y = - 0.01x + 15
-days = range(0,329)
+days = range(0,330)
 dollar_tl_increases = [x*0.01 + 15  for x in days ]
 dollar_tl_stable = [15 for x in days ]
 dollar_tl_decreases = [-x*0.01 + 15  for x in days ]
@@ -103,7 +101,10 @@ def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime
     weekly_standard_deviation_for_rm_id['week'] = weekly_standard_deviation_for_rm_id.index.week
     weekly_standard_deviation_for_rm_id['year'] = weekly_standard_deviation_for_rm_id.index.year    
     
-
+    
+    max_stock = max_stocks[rm_id]  #2 cycles of Safety Stock (Daily Run Rate X Lead time)*2 
+    
+    
     merge = pd.merge(weekly_standard_deviation_for_rm_id,df_random,on="week")
     merge["noise"] = merge[rm_id] * merge["random_number"]
     merge.index = usage.index
@@ -124,7 +125,7 @@ def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime
     total_holding_cost = 0
     total_ordering_cost = 0
     total_purchase_cost = 0
-    
+    order_amount = 0
     for day in range(0,len(usage)):
         
         reorder_point = reorder_point_list[day]    
@@ -133,11 +134,14 @@ def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime
         if current_stock < reorder_point: # When under reorder point, order min_batch_size of units
            order += 1 
            total_ordering_cost += order_cost * exchange_rate[day]
-           total_purchase_cost += purchase_cost * min_batch_size * exchange_rate[day]
-           
+           #total_purchase_cost += purchase_cost * min_batch_size * exchange_rate[day]
+           order_amount = max_stock[day] - current_stock 
+           total_purchase_cost += purchase_cost * order_amount * exchange_rate[day]
            
         if order >= lead_time: # When order pass lead time, order is fulfilled
-            current_stock = current_stock + min_batch_size # add order to current inventory
+            #current_stock = current_stock + min_batch_size # add order to current inventory
+            current_stock = order_amount
+            order_amount = 0
             order = 0  # reset order
        
         total_holding_cost += max(current_stock,0) * holding_cost * exchange_rate[day]
@@ -160,12 +164,12 @@ def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime
      
     total_cost_incurred = total_holding_cost + total_ordering_cost + total_purchase_cost    
     #print("Results for",rm_id+":","Total stockouts:", stockout_days,"Cost:" )
-    #return total_cost_incurred
+    return total_cost_incurred
     
 for tpl in [(0,0),(-1,1),(-2,2),(0,1),(0,2)]:
     total_cost = 0
 
-    for rm in raw_materials_in_analysis:
+    for rm in raw_materials_in_analysis[0:5]:
         x1 = tpl[0]
         x2 = tpl[1]
         cost = simulation(rm,plot = True,x1 = x1,x2 = x2)
