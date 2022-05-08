@@ -55,7 +55,7 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
             grouped_by_week_safety_stock = pd.DataFrame(grouped_by_week_safety_stock)
     
     # Purchase Cost (Dollars per kg)
-    purchase_cost = pd.DataFrame(data = {"Category": ["Natural Rubber","Metallic reinforc.","Carbon Black","Chemical","Bead","Synthetic Rubber","Textile reinforc."],
+    purchase_cost = pd.DataFrame(data = {"Category": ["Natural Rubber","Metallic Reinforc.","Carbon Black","Chemical","Bead","Synthetic Rubber","Textile Reinforc."],
                                          "Purchase Cost": [2,1,3,5,2,1.77,1.18] })
     purchase_cost["Holding Cost"] = 0.10 * (1/365) * purchase_cost["Purchase Cost"] # 10% interest for a dollar annually	 
     purchase_and_holding_costs = pd.merge(material_type_data,purchase_cost,on='Category',how='inner')
@@ -66,6 +66,7 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     # Ordering Cost
     order_data = pd.merge(lt_data,ordering_cost_data,on='COUNTRY',how='inner')
     
+    # Max stock (S,s)
     
     
     # Prepare data to be used in Cplex, make rows contain RM data again
@@ -100,32 +101,46 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     transposed_weekly_safety_stock_data = new_ss.transpose()
     
     reorder_points = pd.DataFrame()
+    max_stocks = pd.DataFrame()
     #Reorder Point
     for rm_id in list(RM_list):
         lead_time = lead_time_data.loc[lead_time_data['MATERIAL NUMBER'] == rm_id, 'TRANSIT TIME'].iloc[0] 
         rm_data = grouped_by_week_averages[rm_id]
             
         reorder_point = rm_data * lead_time 
+        max_stock = reorder_point * 2 
         
         if len(reorder_points) != 0:
             reorder_points[rm_id] = reorder_point
+            
+            max_stocks[rm_id] = max_stock
         else:
             reorder_points = reorder_point    
             reorder_points = pd.DataFrame(reorder_point)
-        
-    merged_with_clean_df = pd.merge(clean_df,reorder_points.reset_index(),on='week',how='left')
+            
+            max_stocks = max_stock    
+            max_stocks = pd.DataFrame(max_stock)
+    
+    
+    reorder_points = reorder_points.sort_values(['year','week'],ascending=[True,True])
+    reorder_points_with_ss = reorder_points + grouped_by_week_safety_stock
+    
+    max_stocks = max_stocks.sort_values(['year','week'],ascending=[True,True])
+    
+    merged_with_clean_df = pd.merge(clean_df,reorder_points_with_ss.reset_index(),on='week',how='left')
     merged_weeks_and_days_rop = merged_with_clean_df[[x for x in merged_with_clean_df.columns if '_y' in x]]
     merged_weeks_and_days_rop = merged_weeks_and_days_rop.transpose()
+    
+    merged_with_clean_df = pd.merge(clean_df,max_stocks.reset_index(),on='week',how='left')
+    merged_weeks_and_days_max_stocks = merged_with_clean_df[[x for x in merged_with_clean_df.columns if '_y' in x]]
+    merged_weeks_and_days_max_stocks.columns = [x.split("_")[0] for x in merged_weeks_and_days_max_stocks.columns]
+    #merged_weeks_and_days_max_stocks = merged_weeks_and_days_max_stocks.transpose()
     
     # Weekly stardard deviation (Will be used for adding noise to the data)
     weekly_startdard_deviation = pd.merge(clean_df,grouped_by_week_std.reset_index(),on='week',how='left')
     weekly_startdard_deviation = weekly_startdard_deviation[[x for x in new.columns if '_y' in x]]
     weekly_startdard_deviation.columns = [x.split("_")[0] for x in weekly_startdard_deviation.columns]
     transposed_weekly_startdard_deviation = weekly_startdard_deviation.transpose(   ) # Transpose to match cplex format
-    
-    
-    
-    
     
     with pd.ExcelWriter("Output Data\\weekly_safety_stocks_"+ str(z_score) + ".xlsx") as writer:
         transposed_weekly_safety_stock_data.to_excel(writer,sheet_name='weekly_safety_stock')
@@ -136,7 +151,7 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
         merged_weeks_and_days_rop.to_excel(writer,sheet_name = "Reorder_Points")        
         daily_demand.to_excel(writer,sheet_name = "Daily_Demand") 
         grouped_by_week_sum.to_excel(writer,sheet_name= "Weekly_Demand")
-    
+        merged_weeks_and_days_max_stocks.to_excel(writer,sheet_name= "max_stocks")
 #grouped_by_week_safety_stock.to_excel('weekly_safety_stocks.xlsx')
 
  

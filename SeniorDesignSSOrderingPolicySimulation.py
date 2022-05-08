@@ -71,12 +71,20 @@ dollar_tl_stable = [15 for x in days ]
 dollar_tl_decreases = [-x*0.01 + 15  for x in days ]
     
 
-
+#start_date = datetime.strptime("2022-03-14 00:00:00", "%Y-%m-%d %H:%M:%S")
 #%% Simulation
-def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime("2022-03-14 00:00:00", "%Y-%m-%d %H:%M:%S"),lead_time_deviation = 1,exchange_rate = dollar_tl_stable):
+def simulation(rm_id,plot = False,x1 = -1, x2 = 1,
+               lt_dev_p = 0,lt_dev_x = 0, exchange_rate = dollar_tl_stable):
     """
     raw_material_id : String, name of the column
-        """
+    
+    x1: float, lower bound for demand deviation
+    x2: float, upper bound for demand deviation
+    lt_dev_p: float, lead time deviation occurance chance, lt_dev_p = 0.05 means there will be a change in leadtime with 5% chance
+    lt_dev_X: float, Lead time deviation rate. lt_dev_x = 1.2 means that lead time will be ---> normal leadtime * lt_dev_x
+    exchange_rate: List, Exchange rate for each day in simulation
+    
+    """
     
     starting_inventory = starting_inventory_data.loc[starting_inventory_data['MATERIAL NUMBER'] == rm_id, 'Starting Inventory'].iloc[0]
     min_batch_size = order_data.loc[order_data['MATERIAL NUMBER'] == rm_id,"MIN BATCH SIZE"].iloc[0]
@@ -112,45 +120,68 @@ def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime
     usage = usage + merge["noise"] 
     usage_day_index = usage.reset_index(drop=True)
         
-    lead_time = math.ceil(order_data.loc[order_data['MATERIAL NUMBER'] == rm_id,
-                     'TRANSIT TIME'].iloc[0]  * lead_time_deviation) # Deviation added to lead time
+    regular_lead_time = math.ceil(order_data.loc[order_data['MATERIAL NUMBER'] == rm_id,
+                     'TRANSIT TIME'].iloc[0]) # Deviation added to lead time
 
     daily_inventory = [] # Hold the daily inventory for graphing purpose
     reorder_points = []
+    order_decisions = ["nan" for x in range(0,330)]
     
-    order = 0 # Days passed after an order is given
+    days_passed_after_order = 0 # Days passed after an order is given
     stockout_days = 0 # Day count when stockout occurs (Stockout: inventory is negative)
     current_stock = starting_inventory
+    order_in_progress = False
     
     total_holding_cost = 0
     total_ordering_cost = 0
     total_purchase_cost = 0
     order_amount = 0
-    for day in range(0,len(usage)):
+    deviated_lead_time = regular_lead_time
+    
+    for day in range(0,len(usage)):    
         
-        reorder_point = reorder_point_list[day]    
-        current_stock = current_stock - usage_day_index.loc[day] # Subtract demand from the inv 
+        # Start of the day Assumption: Ordered raw materials arrive at the start of the day
+        reorder_point = reorder_point_list[day] #calculate reorder_point    
         
-        if current_stock < reorder_point: # When under reorder point, order min_batch_size of units
-           order += 1 
-           total_ordering_cost += order_cost * exchange_rate[day]
-           #total_purchase_cost += purchase_cost * min_batch_size * exchange_rate[day]
-           order_amount = max_stock[day] - current_stock 
-           total_purchase_cost += purchase_cost * order_amount * exchange_rate[day]
+        if days_passed_after_order == deviated_lead_time: # if leadtime days passed after order
+            current_stock += order_amount
+            order_amount = 0 # reset order
+            days_passed_after_order = 0
+            order_in_progress = False #Order is completed
+            
+        if current_stock < reorder_point and not order_in_progress: # When under reorder point, give order           
+           order_in_progress = True # Start ordering process
+           order_amount = max((max_stock[day] - current_stock),min_batch_size) # Decide how much to buy 
+           total_ordering_cost += order_cost * exchange_rate[day] # Pay for the ship and container
+           total_purchase_cost += purchase_cost * order_amount * exchange_rate[day] # Pay for the RMs
            
-        if order >= lead_time: # When order pass lead time, order is fulfilled
-            #current_stock = current_stock + min_batch_size # add order to current inventory
-            current_stock = order_amount
-            order_amount = 0
-            order = 0  # reset order
-       
-        total_holding_cost += max(current_stock,0) * holding_cost * exchange_rate[day]
+           # Lead Time Deviation: # With lt_dev_p chance, lead time deviation occurs
+           rand_number = random.uniform(0,1)    
+           if rand_number < lt_dev_p:
+               deviated_lead_time = math.ceil(regular_lead_time * lt_dev_x)
+           else:
+               deviated_lead_time = regular_lead_time
+           order_decisions[day] = 1
+           #print("reorder point = " ,str(reorder_point), "ordered",str(order_amount), "MBS",str(min_batch_size))
+        
+        
+        current_stock = current_stock - usage_day_index.loc[day] # Subtract demand from the inv
+        
+        #End Of The Day
+        
+        # Calculate holding cost after demand for that day is fulfilled
+        total_holding_cost += max(current_stock,0) * holding_cost * exchange_rate[day] 
         
         if current_stock < 0: # when Inventory is negative, stockout occurs
             stockout_days += 1 
-
+        
+        if order_in_progress: # If there is an order in progress, a day has passed after you gave order
+            days_passed_after_order += 1
+            
         daily_inventory.append(current_stock) # Add current inventory to daily_inventory list to graph it later        
         reorder_points.append(reorder_point)
+        #print("daily inv == ", str(current_stock))
+    
     if plot:
         fig, ax = plt.subplots() 
         ax.plot(usage.index, daily_inventory, color="C0")
@@ -158,27 +189,31 @@ def simulation(rm_id,plot = False,x1 = -1, x2 = 1,start_date = datetime.strptime
         plt.title(rm_id) 
         plt.ylabel("Inventory")
         plt.xlabel("Date")
-        plt.legend(labels=["usage","reorder point"])
+        plt.legend(labels=["inventory","reorder point"])
 
         plt.savefig("Results\\"+rm_id+".png",dpi=200)
      
     total_cost_incurred = total_holding_cost + total_ordering_cost + total_purchase_cost    
-    #print("Results for",rm_id+":","Total stockouts:", stockout_days,"Cost:" )
+    print("Results for",rm_id+":","Total stockouts:", stockout_days,"Cost:", str(total_cost_incurred) )
     return total_cost_incurred
     
-for tpl in [(0,0),(-1,1),(-2,2),(0,1),(0,2)]:
-    total_cost = 0
+# for tpl in [(0,0),(-1,1),(-2,2),(0,1),(0,2)]:
+#     total_cost = 0
 
-    for rm in raw_materials_in_analysis[0:5]:
-        x1 = tpl[0]
-        x2 = tpl[1]
-        cost = simulation(rm,plot = True,x1 = x1,x2 = x2)
-        total_cost += cost
+#     for rm in raw_materials_in_analysis[0:5]:
+#         x1 = tpl[0]
+#         x2 = tpl[1]
+#         cost = simulation(rm,plot = True,x1 = x1,x2 = x2)
+#         total_cost += cost
 
-    print("Total Cost under uncertainty under " + str(x1) + "," +  str(x2) + " is: " + str(total_cost))
+    # print("Total Cost under uncertainty under " + str(x1) + "," +  str(x2) + " is: " + str(total_cost))
 
+index = 0
+for rm in raw_materials_in_analysis:    
+    cost = simulation(rm,plot = True,x1 = 0,x2 = 0,exchange_rate=dollar_tl_stable)
 
-
+    #print(rm,index,cost)
+    index +=1
 
 
 
