@@ -10,6 +10,13 @@ import matplotlib.pyplot as plt
 import math
 import time
 import datetime as dt
+import scipy.stats as st
+import os
+
+dir_path = os.path.dirname(os.path.realpath(__file__))
+output_directory = dir_path + "\\Data Prep Output" # Data will be printed out here
+if not os.path.exists(output_directory): # create the folder if not exists already
+    os.mkdir(output_directory)
 
 usage_data = pd.read_excel("input data\\Safety Stock Çalışma.xlsx",sheet_name="USAGE")
 lead_time_data = pd.read_excel("input data\\Safety Stock Çalışma.xlsx",sheet_name="DATA")
@@ -17,6 +24,12 @@ ordering_cost_data = pd.read_excel("input data\\Ordering Cost.xlsx")
 material_type_data = pd.read_csv("input data\\MaterialType.csv",sep=";")
 material_type_data = material_type_data[["MALZEME","Category"]]
 
+service_levels_and_z_scores = []
+for service_level in [x/100 for x in range(90,100)]:
+    converted = (1 - service_level)/2
+    z_score = st.norm.ppf(1-converted).round(2)
+    #print(service_level,z_score)
+    service_levels_and_z_scores.append((service_level,z_score))
 usage_data # Rows: Material Columns: Time
 
 df = usage_data.transpose() # After transpose: Rows: Time, Columns: Raw Material Data
@@ -39,7 +52,7 @@ clean_df['year'] = clean_df.index.year # Get year of days in data
 grouped_by_week_averages = clean_df.groupby(['week','year']).mean() #Weekly averages 
 grouped_by_week_std = clean_df.groupby(['week','year']).std() #Weekly standart deviations
 grouped_by_week_sum = clean_df.groupby(['week','year']).sum()
-for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
+for service_level,z_score in service_levels_and_z_scores: # [90%,95%,99%]
     grouped_by_week_safety_stock = pd.DataFrame()
     
     # Calculate weekly safety stock for each Raw Material
@@ -142,7 +155,7 @@ for z_score in [1.645,1.96,2.575]: # [90%,95%,99%]
     weekly_startdard_deviation.columns = [x.split("_")[0] for x in weekly_startdard_deviation.columns]
     transposed_weekly_startdard_deviation = weekly_startdard_deviation.transpose(   ) # Transpose to match cplex format
     
-    with pd.ExcelWriter("Output Data\\weekly_safety_stocks_"+ str(z_score) + ".xlsx") as writer:
+    with pd.ExcelWriter(output_directory+"\\weekly_safety_stocks_"+ str(service_level) + ".xlsx") as writer:
         transposed_weekly_safety_stock_data.to_excel(writer,sheet_name='weekly_safety_stock')
         transposed_weekly_startdard_deviation.to_excel(writer,sheet_name='weekly_startdard_deviation')
         order_data.to_excel(writer,sheet_name='order_data')
