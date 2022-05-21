@@ -11,16 +11,6 @@ import random
 import math
 import warnings;   warnings.filterwarnings("ignore")
 import os
-#%% TODO
-# Add Exchange Rate + +
-# Add Purchase Cost + +
-# Add ordering cost + + 
-# Add Lead time deviation + + 
-# Add distribution
-# Calculate q ?
-# Total cost u tek göstermek yerine, holding cost order cost gibi ayrı ayrı gösterelim +
-#%% DATA PREPARATION
-
 
 class Simulation:
     dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -67,32 +57,18 @@ class Simulation:
         weekly_standard_deviation_used.set_index("MATERIAL NUMBER",inplace=True)
         self.weekly_standard_deviation_used_transposed = weekly_standard_deviation_used.transpose()
         
-        # ignored_days: 0 usage for all RM's. Holidays (Eid al-Fitr,Eid al-Adha,New Year's Day) (Ramazan,Kurban,Yılbaşı)
-        #ignored_days = ['2022-05-01 00:00:00','2022-05-02 00:00:00','2022-05-03 00:00:00','2022-05-04 00:00:00','2022-07-09 00:00:00'
-        #                ,'2022-07-10 00:00:00','2022-07-11 00:00:00','2022-07-12 00:00:00','2023-01-01 00:00:00']
-        #ignore_timestamps = [datetime.strptime(x, "%Y-%m-%d %H:%M:%S") for x in ignored_days]
-        
-    #Exchange rate y= 0.01x + 15, y = 15, y = - 0.01x + 15
-    # days = range(0,330)
-    # dollar_tl_increases = [x*0.01 + 15  for x in days ]
-    # dollar_tl_stable = [15 for x in days ]
-    # dollar_tl_decreases = [-x*0.01 + 15  for x in days ]
-    
-
-#start_date = datetime.strptime("2022-03-14 00:00:00", "%Y-%m-%d %H:%M:%S")
 #%% Simulation
     def simulation(self,rm_id,plot = False,x1 = 0, x2 = 0,
-                   lt_dev_p = 0,lt_dev_x = 0, exchange_rate = [15 for x in range(0,330)],
-                   policy="SS",max_stock_multiplier = 2):
+                   lead_time_deviation_present = False, expected_exchange_rate = 15,
+                   policy="SS",max_stock_multiplier = 2,stockout_occurrence_cost=500000):
         """
         raw_material_id : String, name of the column
         
         x1: float, lower bound for demand deviation
         x2: float, upper bound for demand deviation
-        lt_dev_p: float, lead time deviation occurance chance, lt_dev_p = 0.05 means there will be a change in leadtime with 5% chance
-        lt_dev_X: float, Lead time deviation rate. lt_dev_x = 1.2 means that lead time will be ---> normal leadtime * lt_dev_x
+        lead_time_deviation_present: Boolean, True if lead time deviation can occur, False otherwise
         exchange_rate: List, Exchange rate for each day in simulation
-        
+        Policy: String, default = "SS". Select ordering policy, "QR" or "SS"
         """
         
         starting_inventory = self.starting_inventory_data.loc[self.starting_inventory_data['MATERIAL NUMBER'] == rm_id, 'Starting Inventory'].iloc[0]
@@ -108,7 +84,7 @@ class Simulation:
        
         # Manipulate demand
         demand_df = pd.DataFrame(usage) 
-        random.seed(42)
+        #random.seed(42)
         random_numbers = [(x,random.uniform(x1,x2)) for x in range(1,53)]
         df_random = pd.DataFrame(random_numbers)
         df_random.columns = ["week","random_number"]
@@ -143,18 +119,14 @@ class Simulation:
         total_ordering_cost = 0
         total_purchase_cost = 0
         order_amount = 0
+        stockout_cost = 0
         deviated_lead_time = regular_lead_time
+        exchange_rate = self.USD_TL_Expectations(todays_exchange_rate=15,expected_exchange_rate = expected_exchange_rate)
+        stockout_amount = 0
         
         for day in range(0,len(usage)):    
             
-            # ---------------------------- Start Of The Day ----------------------------
-            #Assumption: Ordered raw materials arrive at the start of the day
-            
             reorder_point = reorder_point_list[day] #calculate reorder_point    
-            
-            
-                
-            
             current_stock = current_stock - usage_day_index.loc[day] # Subtract demand from the inv
             
             if current_stock < reorder_point and not order_in_progress: # When under reorder point, give order           
@@ -168,17 +140,24 @@ class Simulation:
                
                 total_ordering_cost += order_cost * exchange_rate[day] # Pay for the ship and container
                 total_purchase_cost += purchase_cost * order_amount * exchange_rate[day] # Pay for the RMs
-               
-               # Lead Time Deviation: # With lt_dev_p chance, lead time deviation occurs
-                rand_number = random.uniform(0,1)    
-                if rand_number < lt_dev_p:
-                    deviated_lead_time = math.ceil(regular_lead_time * lt_dev_x)
+            
+                #Lead Time Deviation:
+                rand_number = random.uniform(0,1)
+                if lead_time_deviation_present:
+                    if rand_number < 0.50: # No deviation occurs
+                        deviated_lead_time = regular_lead_time
+                    elif 0.50 < rand_number < 0.70:  # With 20% chance, Lead time deviates 5%
+                        deviated_lead_time = math.ceil(regular_lead_time * 1.05)
+                    elif 0.70 < rand_number < 0.85:  # With 10% chance, Lead time deviates 10%
+                        deviated_lead_time = math.ceil(regular_lead_time * 1.10)
+                    elif 0.85 < rand_number < 0.95:  # With 5% chance, Lead time deviates 20%
+                        deviated_lead_time = math.ceil(regular_lead_time * 1.15)
+                    else: # With 5% chance, Lead time deviates 20%
+                        deviated_lead_time = math.ceil(regular_lead_time * 1.20)
                 else:
                     deviated_lead_time = regular_lead_time
                 order_decisions[day] = 1
-                #print("reorder point = " ,str(reorder_point), "ordered",str(order_amount), "MBS",str(min_batch_size))
-            
-            #---------------------------- End Of The Day ----------------------------
+                
             if days_passed_after_order == deviated_lead_time: # if leadtime days passed after order
                 current_stock += order_amount
                 order_amount = 0 # reset order
@@ -189,13 +168,14 @@ class Simulation:
             
             if current_stock < 0: # when Inventory is negative, stockout occurs
                 stockout_days += 1 
-            
+                stockout_cost += stockout_occurrence_cost #TL
+                stockout_amount += abs(current_stock)
+                
             if order_in_progress: # If there is an order in progress, a day has passed after you gave order
                 days_passed_after_order += 1
                 
             daily_inventory.append(current_stock) # Add current inventory to daily_inventory list to graph it later        
             reorder_points.append(reorder_point)
-            #print("daily inv == ", str(current_stock))
         
         if plot:
             fig, ax = plt.subplots() 
@@ -207,11 +187,20 @@ class Simulation:
             plt.legend(labels=["inventory","reorder point"])
     
             plt.savefig("Results\\"+rm_id+".png",dpi=200)
-         
-        total_cost_incurred = total_holding_cost + total_ordering_cost + total_purchase_cost    
-        print("Results for",rm_id,"at",str(self.service_level),"service level With " + policy +" policy:" ,"Total stockouts:", stockout_days,"Cost:", str(total_cost_incurred) )
-        return [total_holding_cost,total_ordering_cost,total_purchase_cost,total_cost_incurred,stockout_days]
+        
+        type_2_service_level = 1 - (stockout_amount / sum(list(usage)))    
+        total_cost_incurred = total_holding_cost + total_ordering_cost + total_purchase_cost + stockout_cost    
+        # print("Results for",rm_id,"at",str(self.service_level),"service level With " + policy +" policy:" ,"Total stockouts:", stockout_days,"Cost:", str(total_cost_incurred),"Type 2 Service Level: " + str(type_2_service_level))
+        return [total_holding_cost,total_ordering_cost,total_purchase_cost,stockout_cost,total_cost_incurred,stockout_days,type_2_service_level]
     
     def get_all_RM_ID(self):
         rm_list = list(self.weekly_standard_deviation_used_transposed.columns)
         return rm_list
+    
+    def USD_TL_Expectations(self,todays_exchange_rate,expected_exchange_rate,days = 330):
+        slope = (expected_exchange_rate - todays_exchange_rate)/days 
+        daily_exchange_rates = [x*slope + todays_exchange_rate for x in range(0,days)]
+        return daily_exchange_rates
+        
+        
+        
